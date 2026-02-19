@@ -1,0 +1,1382 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Terrain Map Studio</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #0d1117;
+    --surface: #161b22;
+    --surface2: #1c2129;
+    --border: #30363d;
+    --text: #e6edf3;
+    --text-dim: #8b949e;
+    --accent: #58a6ff;
+    --accent-hover: #79c0ff;
+    --green: #3fb950;
+    --orange: #d29922;
+    --red: #f85149;
+    --radius: 8px;
+    --font: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    --mono: 'SF Mono', 'Fira Code', 'JetBrains Mono', monospace;
+  }
+
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap');
+
+  body {
+    font-family: var(--font);
+    background: var(--bg);
+    color: var(--text);
+    height: 100vh;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 20px;
+    height: 48px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+    z-index: 100;
+  }
+
+  .logo {
+    font-weight: 600;
+    font-size: 15px;
+    letter-spacing: -0.3px;
+    color: var(--text);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .logo-icon {
+    width: 22px;
+    height: 22px;
+    background: linear-gradient(135deg, var(--green), var(--accent));
+    border-radius: 5px;
+  }
+
+  .header-actions { display: flex; gap: 8px; }
+
+  .main-layout {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+  }
+
+  .toolbar {
+    width: 52px;
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 12px 0;
+    gap: 4px;
+    flex-shrink: 0;
+  }
+
+  .tool-btn {
+    width: 36px;
+    height: 36px;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text-dim);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.15s;
+    position: relative;
+  }
+
+  .tool-btn:hover { background: var(--surface2); color: var(--text); }
+  .tool-btn.active { background: rgba(88, 166, 255, 0.15); color: var(--accent); }
+  .tool-btn svg { width: 18px; height: 18px; }
+
+  .tool-sep {
+    width: 24px;
+    height: 1px;
+    background: var(--border);
+    margin: 6px 0;
+  }
+
+  .tool-btn .tooltip {
+    position: absolute;
+    left: 46px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    padding: 4px 10px;
+    border-radius: 6px;
+    font-size: 12px;
+    white-space: nowrap;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.15s;
+    z-index: 200;
+    color: var(--text);
+  }
+
+  .tool-btn:hover .tooltip { opacity: 1; }
+
+  .canvas-area {
+    flex: 1;
+    position: relative;
+    overflow: hidden;
+    background: #0a0c10;
+    cursor: default;
+  }
+
+  #terrain-canvas {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%;
+    height: 100%;
+  }
+
+  #overlay-svg {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 10;
+  }
+
+  #overlay-svg.drawing { pointer-events: all; cursor: crosshair; }
+  #overlay-svg.texting { pointer-events: all; cursor: text; }
+
+  .canvas-area.panning { cursor: grab; }
+  .canvas-area.panning:active { cursor: grabbing; }
+
+  .side-panel {
+    width: 280px;
+    background: var(--surface);
+    border-left: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+    overflow-y: auto;
+  }
+
+  .panel-section {
+    padding: 16px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .panel-section-title {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-dim);
+    margin-bottom: 12px;
+  }
+
+  .field-group {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .field-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .field-label {
+    font-size: 12px;
+    color: var(--text-dim);
+    min-width: 55px;
+    flex-shrink: 0;
+  }
+
+  input[type="text"], input[type="number"], select {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+    font-size: 13px;
+    padding: 6px 10px;
+    width: 100%;
+    font-family: var(--font);
+    outline: none;
+    transition: border-color 0.15s;
+  }
+
+  input:focus, select:focus { border-color: var(--accent); }
+
+  input[type="number"] {
+    font-family: var(--mono);
+    font-size: 12px;
+  }
+
+  input[type="color"] {
+    width: 32px;
+    height: 28px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: var(--bg);
+    cursor: pointer;
+    padding: 2px;
+  }
+
+  input[type="range"] {
+    width: 100%;
+    accent-color: var(--accent);
+  }
+
+  .btn {
+    padding: 8px 16px;
+    border: none;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    font-family: var(--font);
+    transition: all 0.15s;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+  }
+
+  .btn-primary { background: var(--accent); color: #fff; }
+  .btn-primary:hover { background: var(--accent-hover); }
+  .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  .btn-ghost {
+    background: transparent;
+    color: var(--text-dim);
+    border: 1px solid var(--border);
+  }
+  .btn-ghost:hover { background: var(--surface2); color: var(--text); }
+
+  .btn-danger {
+    background: transparent;
+    color: var(--red);
+    border: 1px solid rgba(248, 81, 73, 0.3);
+  }
+  .btn-danger:hover { background: rgba(248, 81, 73, 0.1); }
+
+  .btn-sm { padding: 5px 10px; font-size: 12px; }
+  .btn-block { width: 100%; }
+
+  .annotation-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px;
+    border-radius: 6px;
+    font-size: 12px;
+    cursor: pointer;
+    transition: background 0.1s;
+  }
+
+  .annotation-item:hover { background: var(--surface2); }
+  .annotation-item.selected { background: rgba(88, 166, 255, 0.1); }
+
+  .annotation-icon {
+    width: 18px;
+    height: 18px;
+    flex-shrink: 0;
+    color: var(--text-dim);
+  }
+
+  .annotation-name {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .annotation-delete {
+    width: 20px;
+    height: 20px;
+    border: none;
+    background: transparent;
+    color: var(--text-dim);
+    cursor: pointer;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    transition: all 0.1s;
+  }
+
+  .annotation-item:hover .annotation-delete { opacity: 1; }
+  .annotation-delete:hover { color: var(--red); background: rgba(248, 81, 73, 0.1); }
+
+  .status-bar {
+    height: 28px;
+    background: var(--surface);
+    border-top: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    padding: 0 16px;
+    font-size: 11px;
+    color: var(--text-dim);
+    gap: 16px;
+    flex-shrink: 0;
+  }
+
+  .status-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--green);
+  }
+
+  .status-dot.loading {
+    background: var(--orange);
+    animation: pulse 1s ease-in-out infinite;
+  }
+
+  @keyframes pulse { 50% { opacity: 0.4; } }
+
+  .loading-overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(13, 17, 23, 0.85);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 50;
+    gap: 16px;
+    transition: opacity 0.3s;
+  }
+
+  .loading-overlay.hidden { opacity: 0; pointer-events: none; }
+
+  .spinner {
+    width: 32px;
+    height: 32px;
+    border: 3px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .loading-text { font-size: 13px; color: var(--text-dim); }
+
+  .text-input-overlay {
+    position: absolute;
+    z-index: 30;
+    display: none;
+  }
+
+  .text-input-overlay input {
+    background: rgba(22, 27, 34, 0.95);
+    border: 1px solid var(--accent);
+    color: var(--text);
+    font-size: 14px;
+    padding: 6px 10px;
+    border-radius: 6px;
+    min-width: 160px;
+    outline: none;
+    font-family: var(--font);
+  }
+
+  .spline-path { fill: none; stroke-linecap: round; stroke-linejoin: round; }
+  .spline-point { cursor: move; }
+  .svg-text { cursor: move; user-select: none; }
+
+  .empty-state {
+    padding: 20px 16px;
+    text-align: center;
+    color: var(--text-dim);
+    font-size: 12px;
+    line-height: 1.5;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <div class="logo-icon"></div>
+    Terrain Studio
+  </div>
+  <div class="header-actions">
+    <button class="btn btn-ghost btn-sm" onclick="exportImage()">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+      Export
+    </button>
+  </div>
+</header>
+
+<div class="main-layout">
+
+  <div class="toolbar">
+    <button class="tool-btn active" data-tool="pan" onclick="setTool('pan')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 11V6a2 2 0 00-2-2 2 2 0 00-2 2v0M14 10V4a2 2 0 00-2-2 2 2 0 00-2 2v2M10 10.5V6a2 2 0 00-2-2 2 2 0 00-2 2v8"/><path d="M18 8a2 2 0 012 2v7.1a4.97 4.97 0 01-1.46 3.53l-.54.54a2 2 0 01-1.41.59H9.42a2 2 0 01-1.42-.59L4.3 17a3.13 3.13 0 01.42-4.56L6 11.5"/></svg>
+      <span class="tooltip">Pan (V)</span>
+    </button>
+    <div class="tool-sep"></div>
+    <button class="tool-btn" data-tool="text" onclick="setTool('text')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg>
+      <span class="tooltip">Text (T)</span>
+    </button>
+    <button class="tool-btn" data-tool="spline" onclick="setTool('spline')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 17c3.5-3.5 5-6 8-6s4.5 2.5 8 6" stroke-dasharray="4 3"/><circle cx="3" cy="17" r="1.5" fill="currentColor"/><circle cx="19" cy="17" r="1.5" fill="currentColor"/></svg>
+      <span class="tooltip">Spline (S)</span>
+    </button>
+    <div class="tool-sep"></div>
+    <button class="tool-btn" data-tool="select" onclick="setTool('select')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3l7.07 16.97 2.51-7.39 7.39-2.51L3 3z"/></svg>
+      <span class="tooltip">Select (A)</span>
+    </button>
+  </div>
+
+  <div class="canvas-area panning" id="canvas-area">
+    <canvas id="terrain-canvas"></canvas>
+    <svg id="overlay-svg" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <filter id="text-shadow" x="-10%" y="-10%" width="120%" height="120%">
+          <feDropShadow dx="0" dy="1" stdDeviation="2" flood-color="#000" flood-opacity="0.7"/>
+        </filter>
+      </defs>
+    </svg>
+    <div class="text-input-overlay" id="text-input-overlay">
+      <input type="text" id="text-input-field" placeholder="Type label..." />
+    </div>
+    <div class="loading-overlay" id="loading-overlay">
+      <div class="spinner"></div>
+      <div class="loading-text" id="loading-text">Rendering terrain...</div>
+    </div>
+  </div>
+
+  <div class="side-panel">
+
+    <div class="panel-section">
+      <div class="panel-section-title">Viewport</div>
+      <div class="field-group">
+        <div class="field-row">
+          <span class="field-label">Latitude</span>
+          <input type="number" id="inp-lat" value="47.4282" step="0.01" />
+        </div>
+        <div class="field-row">
+          <span class="field-label">Longitude</span>
+          <input type="number" id="inp-lon" value="-121.4133" step="0.01" />
+        </div>
+        <div class="field-row">
+          <span class="field-label">Zoom</span>
+          <input type="range" id="inp-zoom" min="5" max="14" value="11" step="1" />
+          <span id="zoom-val" style="font-size:12px;color:var(--text-dim);min-width:18px;text-align:right;">11</span>
+        </div>
+        <div class="field-row">
+          <span class="field-label">Tiles</span>
+          <select id="inp-tiles">
+            <option value="2">2 x 2</option>
+            <option value="3">3 x 3</option>
+            <option value="4" selected>4 x 4</option>
+            <option value="5">5 x 5</option>
+            <option value="6">6 x 6</option>
+          </select>
+        </div>
+        <button class="btn btn-primary btn-block" id="btn-render" onclick="renderTerrain()">Render Terrain</button>
+      </div>
+    </div>
+
+    <div class="panel-section" id="text-props" style="display:none;">
+      <div class="panel-section-title">Text Properties</div>
+      <div class="field-group">
+        <div class="field-row">
+          <span class="field-label">Size</span>
+          <input type="range" id="text-size" min="10" max="72" value="18" step="1" />
+          <span id="text-size-val" style="font-size:12px;color:var(--text-dim);min-width:24px;text-align:right;">18</span>
+        </div>
+        <div class="field-row">
+          <span class="field-label">Color</span>
+          <input type="color" id="text-color" value="#ffffff" />
+        </div>
+        <div class="field-row">
+          <span class="field-label">Weight</span>
+          <select id="text-weight">
+            <option value="300">Light</option>
+            <option value="400" selected>Regular</option>
+            <option value="500">Medium</option>
+            <option value="600">Semibold</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel-section" id="spline-props" style="display:none;">
+      <div class="panel-section-title">Spline Properties</div>
+      <div class="field-group">
+        <div class="field-row">
+          <span class="field-label">Width</span>
+          <input type="range" id="spline-width" min="1" max="8" value="2.5" step="0.5" />
+          <span id="spline-width-val" style="font-size:12px;color:var(--text-dim);min-width:24px;text-align:right;">2.5</span>
+        </div>
+        <div class="field-row">
+          <span class="field-label">Color</span>
+          <input type="color" id="spline-color" value="#ffffff" />
+        </div>
+        <div class="field-row">
+          <span class="field-label">Dash</span>
+          <input type="text" id="spline-dash" value="8 5" style="font-family:var(--mono);font-size:12px;" />
+        </div>
+        <div class="field-row" style="justify-content:flex-end; margin-top: 4px;">
+          <button class="btn btn-ghost btn-sm" onclick="finishCurrentSpline()">Finish Spline</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel-section" style="flex:1; border-bottom: none;">
+      <div class="panel-section-title">Annotations</div>
+      <div id="annotations-list">
+        <div class="empty-state">No annotations yet. Use the text or spline tool to add annotations to the map.</div>
+      </div>
+      <div style="margin-top: 12px;" id="clear-all-wrap" hidden>
+        <button class="btn btn-danger btn-sm btn-block" onclick="clearAllAnnotations()">Clear All</button>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<div class="status-bar">
+  <div class="status-dot" id="status-dot"></div>
+  <span id="status-text">Ready</span>
+  <span style="flex:1"></span>
+  <span id="cursor-coords"></span>
+</div>
+
+<script>
+const canvas = document.getElementById('terrain-canvas');
+const ctx = canvas.getContext('2d');
+const svgEl = document.getElementById('overlay-svg');
+const canvasArea = document.getElementById('canvas-area');
+const loadingOverlay = document.getElementById('loading-overlay');
+
+let currentTool = 'pan';
+let terrainImage = null;
+let terrainBounds = null;
+let terrainWidth = 0, terrainHeight = 0;
+
+let viewX = 0, viewY = 0, viewScale = 1;
+let isPanning = false, panStartX = 0, panStartY = 0;
+
+let annotations = [];
+let nextId = 1;
+let selectedAnnotation = null;
+
+let currentSplinePoints = [];
+let currentSplineEl = null;
+
+// ── Terrain colormap ──
+const COLORMAP_STOPS = [
+  [0.00, 26, 58, 26],
+  [0.08, 45, 90, 39],
+  [0.18, 58, 122, 50],
+  [0.28, 90, 154, 58],
+  [0.38, 122, 170, 74],
+  [0.48, 160, 184, 80],
+  [0.55, 196, 180, 74],
+  [0.62, 184, 144, 96],
+  [0.70, 160, 120, 104],
+  [0.78, 152, 136, 128],
+  [0.86, 176, 168, 152],
+  [0.93, 208, 200, 192],
+  [1.00, 240, 235, 229],
+];
+
+function sampleColormap(t) {
+  t = Math.max(0, Math.min(1, t));
+  for (let i = 0; i < COLORMAP_STOPS.length - 1; i++) {
+    const [p0, r0, g0, b0] = COLORMAP_STOPS[i];
+    const [p1, r1, g1, b1] = COLORMAP_STOPS[i + 1];
+    if (t >= p0 && t <= p1) {
+      const f = (t - p0) / (p1 - p0);
+      return [
+        r0 + (r1 - r0) * f,
+        g0 + (g1 - g0) * f,
+        b0 + (b1 - b0) * f,
+      ];
+    }
+  }
+  const last = COLORMAP_STOPS[COLORMAP_STOPS.length - 1];
+  return [last[1], last[2], last[3]];
+}
+
+// ── Tile math ──
+function latLonToTile(lat, lon, zoom) {
+  const n = 1 << zoom;
+  const x = Math.floor((lon + 180) / 360 * n);
+  const latRad = lat * Math.PI / 180;
+  const y = Math.floor((1 - Math.log(Math.tan(latRad) + 1 / Math.cos(latRad)) / Math.PI) / 2 * n);
+  return [x, y];
+}
+
+function tileToLatLon(x, y, zoom) {
+  const n = 1 << zoom;
+  const lon = x / n * 360 - 180;
+  const latRad = Math.atan(Math.sinh(Math.PI * (1 - 2 * y / n)));
+  return [latRad * 180 / Math.PI, lon];
+}
+
+// ── Fetch a single tile as ImageData ──
+function fetchTileImage(zoom, tx, ty) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      const c = document.createElement('canvas');
+      c.width = 256; c.height = 256;
+      const cx = c.getContext('2d');
+      cx.drawImage(img, 0, 0);
+      resolve(cx.getImageData(0, 0, 256, 256));
+    };
+    img.onerror = () => reject(new Error(`Failed to load tile ${zoom}/${tx}/${ty}`));
+    img.src = `https://s3.amazonaws.com/elevation-tiles-prod/terrarium/${zoom}/${tx}/${ty}.png`;
+  });
+}
+
+// ── Client-side terrain rendering ──
+async function renderTerrain() {
+  const lat = parseFloat(document.getElementById('inp-lat').value);
+  const lon = parseFloat(document.getElementById('inp-lon').value);
+  const zoom = Math.max(5, Math.min(14, parseInt(document.getElementById('inp-zoom').value)));
+  const tileCount = Math.max(2, Math.min(6, parseInt(document.getElementById('inp-tiles').value)));
+
+  loadingOverlay.classList.remove('hidden');
+  setStatus('loading', 'Fetching tiles...');
+  document.getElementById('btn-render').disabled = true;
+
+  try {
+    const [cx, cy] = latLonToTile(lat, lon, zoom);
+    const half = Math.floor(tileCount / 2);
+    const xStart = cx - half;
+    const yStart = cy - half;
+
+    const totalPx = tileCount * 256;
+    const elevation = new Float32Array(totalPx * totalPx);
+
+    const promises = [];
+    for (let dy = 0; dy < tileCount; dy++) {
+      for (let dx = 0; dx < tileCount; dx++) {
+        const tx = xStart + dx;
+        const ty = yStart + dy;
+        promises.push(
+          fetchTileImage(zoom, tx, ty).then(imgData => ({ dx, dy, imgData }))
+        );
+      }
+    }
+
+    document.getElementById('loading-text').textContent = `Fetching ${tileCount * tileCount} tiles...`;
+    const tiles = await Promise.all(promises);
+
+    document.getElementById('loading-text').textContent = 'Decoding elevation...';
+    await new Promise(r => requestAnimationFrame(r));
+
+    for (const { dx, dy, imgData } of tiles) {
+      const d = imgData.data;
+      for (let py = 0; py < 256; py++) {
+        for (let px = 0; px < 256; px++) {
+          const si = (py * 256 + px) * 4;
+          const r = d[si], g = d[si + 1], b = d[si + 2];
+          const h = (r * 256 + g + b / 256) - 32768;
+          const gy = dy * 256 + py;
+          const gx = dx * 256 + px;
+          elevation[gy * totalPx + gx] = h;
+        }
+      }
+    }
+
+    document.getElementById('loading-text').textContent = 'Computing hillshade...';
+    await new Promise(r => requestAnimationFrame(r));
+
+    let eMin = Infinity, eMax = -Infinity;
+    for (let i = 0; i < elevation.length; i++) {
+      if (elevation[i] < eMin) eMin = elevation[i];
+      if (elevation[i] > eMax) eMax = elevation[i];
+    }
+    const eRange = eMax - eMin || 1;
+
+    const azRad = 315 * Math.PI / 180;
+    const altRad = 40 * Math.PI / 180;
+    const sinAlt = Math.sin(altRad);
+    const cosAlt = Math.cos(altRad);
+
+    const rgba = new Uint8ClampedArray(totalPx * totalPx * 4);
+
+    for (let y = 1; y < totalPx - 1; y++) {
+      for (let x = 1; x < totalPx - 1; x++) {
+        const idx = y * totalPx + x;
+        const dzdx = (elevation[idx + 1] - elevation[idx - 1]) * 0.5;
+        const dzdy = (elevation[idx + totalPx] - elevation[idx - totalPx]) * 0.5;
+
+        const slope = Math.sqrt(dzdx * dzdx + dzdy * dzdy);
+        const aspect = Math.atan2(-dzdy, dzdx);
+        const slopeAngle = Math.atan(slope);
+
+        let shade = sinAlt * Math.cos(slopeAngle)
+                  + cosAlt * Math.sin(slopeAngle) * Math.cos(azRad - aspect);
+        if (shade < 0) shade = 0;
+        if (shade > 1) shade = 1;
+
+        const t = (elevation[idx] - eMin) / eRange;
+        const [cr, cg, cb] = sampleColormap(t);
+
+        const light = 0.3 + 0.7 * shade;
+        const oi = idx * 4;
+        rgba[oi]     = Math.round(cr * light);
+        rgba[oi + 1] = Math.round(cg * light);
+        rgba[oi + 2] = Math.round(cb * light);
+        rgba[oi + 3] = 255;
+      }
+    }
+
+    // Fill edges by copying nearest interior row/col
+    for (let x = 0; x < totalPx; x++) {
+      const topSrc = (1 * totalPx + x) * 4;
+      const topDst = (0 * totalPx + x) * 4;
+      const botSrc = ((totalPx - 2) * totalPx + x) * 4;
+      const botDst = ((totalPx - 1) * totalPx + x) * 4;
+      for (let c = 0; c < 4; c++) {
+        rgba[topDst + c] = rgba[topSrc + c];
+        rgba[botDst + c] = rgba[botSrc + c];
+      }
+    }
+    for (let y = 0; y < totalPx; y++) {
+      const leftSrc = (y * totalPx + 1) * 4;
+      const leftDst = (y * totalPx + 0) * 4;
+      const rightSrc = (y * totalPx + totalPx - 2) * 4;
+      const rightDst = (y * totalPx + totalPx - 1) * 4;
+      for (let c = 0; c < 4; c++) {
+        rgba[leftDst + c] = rgba[leftSrc + c];
+        rgba[rightDst + c] = rgba[rightSrc + c];
+      }
+    }
+
+    document.getElementById('loading-text').textContent = 'Rendering image...';
+    await new Promise(r => requestAnimationFrame(r));
+
+    const offscreen = document.createElement('canvas');
+    offscreen.width = totalPx;
+    offscreen.height = totalPx;
+    const octx = offscreen.getContext('2d');
+    const imageData = new ImageData(rgba, totalPx, totalPx);
+    octx.putImageData(imageData, 0, 0);
+
+    const img = new Image();
+    img.onload = () => {
+      terrainImage = img;
+      terrainWidth = totalPx;
+      terrainHeight = totalPx;
+
+      const [northLat, westLon] = tileToLatLon(xStart, yStart, zoom);
+      const [southLat, eastLon] = tileToLatLon(xStart + tileCount, yStart + tileCount, zoom);
+      terrainBounds = { north: northLat, south: southLat, west: westLon, east: eastLon };
+
+      resetView();
+      drawCanvas();
+      loadingOverlay.classList.add('hidden');
+      setStatus('ready', `Terrain loaded (${totalPx}x${totalPx}) | ${eMin.toFixed(0)}m – ${eMax.toFixed(0)}m`);
+      document.getElementById('btn-render').disabled = false;
+    };
+    img.src = offscreen.toDataURL();
+
+  } catch (err) {
+    loadingOverlay.classList.add('hidden');
+    setStatus('ready', 'Error: ' + err.message);
+    document.getElementById('btn-render').disabled = false;
+  }
+}
+
+// ── Tool switching ──
+function setTool(tool) {
+  currentTool = tool;
+  document.querySelectorAll('.tool-btn').forEach(b => b.classList.toggle('active', b.dataset.tool === tool));
+  svgEl.classList.remove('drawing', 'texting');
+  canvasArea.classList.remove('panning');
+  if (tool === 'pan') canvasArea.classList.add('panning');
+  else if (tool === 'spline') svgEl.classList.add('drawing');
+  else if (tool === 'text') svgEl.classList.add('texting');
+  document.getElementById('text-props').style.display = (tool === 'text') ? '' : 'none';
+  document.getElementById('spline-props').style.display = (tool === 'spline') ? '' : 'none';
+  if (tool !== 'spline') finishCurrentSpline();
+}
+
+document.addEventListener('keydown', e => {
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+  if (e.key === 'v' || e.key === 'V') setTool('pan');
+  else if (e.key === 't' || e.key === 'T') setTool('text');
+  else if (e.key === 's' || e.key === 'S') setTool('spline');
+  else if (e.key === 'a' || e.key === 'A') setTool('select');
+  else if (e.key === 'Escape') {
+    finishCurrentSpline();
+    hideTextInput();
+    selectedAnnotation = null;
+    refreshAnnotationsList();
+    rebuildSVGAnnotations();
+  }
+  else if ((e.key === 'Delete' || e.key === 'Backspace') && selectedAnnotation && e.target.tagName !== 'INPUT') {
+    deleteAnnotation(selectedAnnotation);
+  }
+});
+
+// ── Slider bindings ──
+document.getElementById('inp-zoom').addEventListener('input', e => {
+  document.getElementById('zoom-val').textContent = e.target.value;
+});
+document.getElementById('text-size').addEventListener('input', e => {
+  document.getElementById('text-size-val').textContent = e.target.value;
+  updateSelectedTextProps();
+});
+document.getElementById('spline-width').addEventListener('input', e => {
+  document.getElementById('spline-width-val').textContent = e.target.value;
+  updateSelectedSplineProps();
+});
+document.getElementById('text-color').addEventListener('input', updateSelectedTextProps);
+document.getElementById('text-weight').addEventListener('change', updateSelectedTextProps);
+document.getElementById('spline-color').addEventListener('input', updateSelectedSplineProps);
+document.getElementById('spline-dash').addEventListener('input', updateSelectedSplineProps);
+
+// ── Canvas view ──
+function resetView() {
+  if (!terrainImage) return;
+  const cw = canvasArea.clientWidth;
+  const ch = canvasArea.clientHeight;
+  viewScale = Math.min(cw / terrainWidth, ch / terrainHeight);
+  viewX = (cw - terrainWidth * viewScale) / 2;
+  viewY = (ch - terrainHeight * viewScale) / 2;
+}
+
+function drawCanvas() {
+  const cw = canvasArea.clientWidth;
+  const ch = canvasArea.clientHeight;
+  canvas.width = cw;
+  canvas.height = ch;
+  ctx.fillStyle = '#0a0c10';
+  ctx.fillRect(0, 0, cw, ch);
+  if (terrainImage) {
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(terrainImage, viewX, viewY, terrainWidth * viewScale, terrainHeight * viewScale);
+  }
+}
+
+function resizeCanvas() { drawCanvas(); rebuildSVGAnnotations(); }
+window.addEventListener('resize', resizeCanvas);
+
+// ── Pan / Zoom ──
+canvasArea.addEventListener('mousedown', e => {
+  if (currentTool === 'pan' && e.button === 0) {
+    isPanning = true;
+    panStartX = e.clientX - viewX;
+    panStartY = e.clientY - viewY;
+  }
+});
+
+canvasArea.addEventListener('mousemove', e => {
+  if (isPanning) {
+    viewX = e.clientX - panStartX;
+    viewY = e.clientY - panStartY;
+    drawCanvas();
+    rebuildSVGAnnotations();
+  }
+  const rect = canvasArea.getBoundingClientRect();
+  const sx = e.clientX - rect.left;
+  const sy = e.clientY - rect.top;
+  const coords = screenToGeo(sx, sy);
+  if (coords) {
+    const latDir = coords.lat >= 0 ? 'N' : 'S';
+    const lonDir = coords.lon >= 0 ? 'E' : 'W';
+    document.getElementById('cursor-coords').textContent =
+      `${Math.abs(coords.lat).toFixed(4)}${latDir}, ${Math.abs(coords.lon).toFixed(4)}${lonDir}`;
+  }
+});
+
+canvasArea.addEventListener('mouseup', () => { isPanning = false; });
+canvasArea.addEventListener('mouseleave', () => { isPanning = false; });
+
+canvasArea.addEventListener('wheel', e => {
+  e.preventDefault();
+  const rect = canvasArea.getBoundingClientRect();
+  const mx = e.clientX - rect.left;
+  const my = e.clientY - rect.top;
+  const factor = e.deltaY < 0 ? 1.12 : 1 / 1.12;
+  const newScale = Math.max(0.1, Math.min(20, viewScale * factor));
+  viewX = mx - (mx - viewX) * (newScale / viewScale);
+  viewY = my - (my - viewY) * (newScale / viewScale);
+  viewScale = newScale;
+  drawCanvas();
+  rebuildSVGAnnotations();
+}, { passive: false });
+
+// ── Coordinate conversion ──
+function screenToImage(sx, sy) {
+  if (!terrainImage) return null;
+  return { x: (sx - viewX) / viewScale, y: (sy - viewY) / viewScale };
+}
+function imageToScreen(ix, iy) {
+  return { x: ix * viewScale + viewX, y: iy * viewScale + viewY };
+}
+function screenToGeo(sx, sy) {
+  if (!terrainImage || !terrainBounds) return null;
+  const img = screenToImage(sx, sy);
+  const fracX = img.x / terrainWidth;
+  const fracY = img.y / terrainHeight;
+  return {
+    lat: terrainBounds.north - fracY * (terrainBounds.north - terrainBounds.south),
+    lon: terrainBounds.west + fracX * (terrainBounds.east - terrainBounds.west)
+  };
+}
+
+// ── SVG overlay interactions ──
+svgEl.addEventListener('mousedown', e => {
+  const rect = canvasArea.getBoundingClientRect();
+  const sx = e.clientX - rect.left;
+  const sy = e.clientY - rect.top;
+  if (currentTool === 'text') showTextInput(sx, sy);
+  else if (currentTool === 'spline') addSplinePoint(sx, sy);
+  else if (currentTool === 'select') trySelectAt(sx, sy);
+});
+
+// ── Text tool ──
+function showTextInput(sx, sy) {
+  const overlay = document.getElementById('text-input-overlay');
+  const input = document.getElementById('text-input-field');
+  overlay.style.display = 'block';
+  overlay.style.left = sx + 'px';
+  overlay.style.top = sy + 'px';
+  input.value = '';
+  input.focus();
+  input.onkeydown = e => {
+    if (e.key === 'Enter' && input.value.trim()) {
+      createTextAnnotation(input.value.trim(), sx, sy);
+      hideTextInput();
+    } else if (e.key === 'Escape') {
+      hideTextInput();
+    }
+  };
+}
+
+function hideTextInput() {
+  document.getElementById('text-input-overlay').style.display = 'none';
+}
+
+function createTextAnnotation(text, sx, sy) {
+  const imgCoords = screenToImage(sx, sy);
+  if (!imgCoords) return;
+  annotations.push({
+    id: nextId++, type: 'text', text,
+    imgX: imgCoords.x, imgY: imgCoords.y,
+    fontSize: parseInt(document.getElementById('text-size').value),
+    color: document.getElementById('text-color').value,
+    fontWeight: document.getElementById('text-weight').value
+  });
+  rebuildSVGAnnotations();
+  refreshAnnotationsList();
+}
+
+// ── Spline tool ──
+function addSplinePoint(sx, sy) {
+  const imgCoords = screenToImage(sx, sy);
+  if (!imgCoords) return;
+  currentSplinePoints.push({ imgX: imgCoords.x, imgY: imgCoords.y });
+  rebuildCurrentSplinePreview();
+}
+
+function rebuildCurrentSplinePreview() {
+  if (currentSplineEl) currentSplineEl.remove();
+  svgEl.querySelectorAll('.spline-point-preview').forEach(el => el.remove());
+  if (currentSplinePoints.length < 1) return;
+
+  const screenPts = currentSplinePoints.map(p => imageToScreen(p.imgX, p.imgY));
+  const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  path.setAttribute('d', buildSmoothPath(screenPts));
+  path.setAttribute('fill', 'none');
+  path.setAttribute('stroke', document.getElementById('spline-color').value);
+  path.setAttribute('stroke-width', document.getElementById('spline-width').value);
+  path.setAttribute('stroke-dasharray', document.getElementById('spline-dash').value);
+  path.setAttribute('stroke-linecap', 'round');
+  path.setAttribute('stroke-linejoin', 'round');
+  path.setAttribute('opacity', '0.8');
+  svgEl.appendChild(path);
+  currentSplineEl = path;
+
+  screenPts.forEach((p, i) => {
+    const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    circle.setAttribute('cx', p.x);
+    circle.setAttribute('cy', p.y);
+    circle.setAttribute('r', 4);
+    circle.setAttribute('fill', 'rgba(88,166,255,0.9)');
+    circle.setAttribute('stroke', '#fff');
+    circle.setAttribute('stroke-width', '1.5');
+    circle.setAttribute('class', 'spline-point-preview');
+    svgEl.appendChild(circle);
+  });
+}
+
+function finishCurrentSpline() {
+  svgEl.querySelectorAll('.spline-point-preview').forEach(el => el.remove());
+  if (currentSplinePoints.length < 2) {
+    currentSplinePoints = [];
+    if (currentSplineEl) { currentSplineEl.remove(); currentSplineEl = null; }
+    return;
+  }
+  annotations.push({
+    id: nextId++, type: 'spline',
+    points: [...currentSplinePoints],
+    strokeWidth: parseFloat(document.getElementById('spline-width').value),
+    color: document.getElementById('spline-color').value,
+    dash: document.getElementById('spline-dash').value
+  });
+  currentSplinePoints = [];
+  if (currentSplineEl) { currentSplineEl.remove(); currentSplineEl = null; }
+  rebuildSVGAnnotations();
+  refreshAnnotationsList();
+}
+
+svgEl.addEventListener('dblclick', e => {
+  if (currentTool === 'spline') { e.preventDefault(); finishCurrentSpline(); }
+});
+
+function buildSmoothPath(points) {
+  if (points.length < 2) return '';
+  if (points.length === 2) {
+    return `M${points[0].x},${points[0].y} L${points[1].x},${points[1].y}`;
+  }
+  let d = `M${points[0].x},${points[0].y}`;
+  for (let i = 0; i < points.length - 1; i++) {
+    const p0 = points[Math.max(0, i - 1)];
+    const p1 = points[i];
+    const p2 = points[i + 1];
+    const p3 = points[Math.min(points.length - 1, i + 2)];
+    const tension = 0.3;
+    const cp1x = p1.x + (p2.x - p0.x) * tension;
+    const cp1y = p1.y + (p2.y - p0.y) * tension;
+    const cp2x = p2.x - (p3.x - p1.x) * tension;
+    const cp2y = p2.y - (p3.y - p1.y) * tension;
+    d += ` C${cp1x},${cp1y} ${cp2x},${cp2y} ${p2.x},${p2.y}`;
+  }
+  return d;
+}
+
+// ── Rebuild all SVG annotations ──
+function rebuildSVGAnnotations() {
+  svgEl.querySelectorAll('.ann-el').forEach(el => el.remove());
+
+  annotations.forEach(ann => {
+    if (ann.type === 'text') {
+      const screen = imageToScreen(ann.imgX, ann.imgY);
+      const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+      g.setAttribute('class', 'ann-el');
+      g.setAttribute('data-id', ann.id);
+
+      const scaledSize = ann.fontSize * Math.min(Math.max(viewScale, 0.3), 3);
+
+      if (selectedAnnotation === ann.id) {
+        const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+        rect.setAttribute('x', screen.x - 4);
+        rect.setAttribute('y', screen.y - scaledSize);
+        rect.setAttribute('width', ann.text.length * scaledSize * 0.6 + 8);
+        rect.setAttribute('height', scaledSize * 1.3);
+        rect.setAttribute('fill', 'none');
+        rect.setAttribute('stroke', 'rgba(88,166,255,0.6)');
+        rect.setAttribute('stroke-width', '1');
+        rect.setAttribute('stroke-dasharray', '3 2');
+        rect.setAttribute('rx', '3');
+        g.appendChild(rect);
+      }
+
+      const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      text.setAttribute('x', screen.x);
+      text.setAttribute('y', screen.y);
+      text.setAttribute('fill', ann.color);
+      text.setAttribute('font-size', scaledSize);
+      text.setAttribute('font-weight', ann.fontWeight);
+      text.setAttribute('font-family', "Inter, -apple-system, sans-serif");
+      text.setAttribute('filter', 'url(#text-shadow)');
+      text.setAttribute('class', 'svg-text');
+      text.setAttribute('pointer-events', 'all');
+      text.textContent = ann.text;
+      g.appendChild(text);
+      svgEl.appendChild(g);
+      makeDraggable(g, ann);
+
+    } else if (ann.type === 'spline') {
+      const screenPts = ann.points.map(p => imageToScreen(p.imgX, p.imgY));
+      const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+      g.setAttribute('class', 'ann-el');
+      g.setAttribute('data-id', ann.id);
+
+      const hitPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      hitPath.setAttribute('d', buildSmoothPath(screenPts));
+      hitPath.setAttribute('fill', 'none');
+      hitPath.setAttribute('stroke', 'transparent');
+      hitPath.setAttribute('stroke-width', Math.max(ann.strokeWidth * viewScale, 12));
+      hitPath.setAttribute('pointer-events', 'stroke');
+      hitPath.setAttribute('cursor', 'pointer');
+      g.appendChild(hitPath);
+
+      const scaledWidth = ann.strokeWidth * Math.min(Math.max(viewScale, 0.3), 3);
+      const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      path.setAttribute('d', buildSmoothPath(screenPts));
+      path.setAttribute('fill', 'none');
+      path.setAttribute('stroke', ann.color);
+      path.setAttribute('stroke-width', scaledWidth);
+      path.setAttribute('stroke-dasharray', ann.dash);
+      path.setAttribute('stroke-linecap', 'round');
+      path.setAttribute('stroke-linejoin', 'round');
+      path.setAttribute('class', 'spline-path');
+      path.setAttribute('pointer-events', 'none');
+      g.appendChild(path);
+
+      if (selectedAnnotation === ann.id) {
+        screenPts.forEach(p => {
+          const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+          circle.setAttribute('cx', p.x);
+          circle.setAttribute('cy', p.y);
+          circle.setAttribute('r', 4);
+          circle.setAttribute('fill', 'rgba(88,166,255,0.8)');
+          circle.setAttribute('stroke', '#fff');
+          circle.setAttribute('stroke-width', '1.5');
+          circle.setAttribute('pointer-events', 'none');
+          g.appendChild(circle);
+        });
+      }
+
+      svgEl.appendChild(g);
+
+      hitPath.addEventListener('mousedown', e => {
+        e.stopPropagation();
+        selectedAnnotation = ann.id;
+        refreshAnnotationsList();
+        rebuildSVGAnnotations();
+      });
+    }
+  });
+
+  rebuildCurrentSplinePreview();
+}
+
+function makeDraggable(g, ann) {
+  let dragging = false;
+  let startSx, startSy, origImgX, origImgY;
+
+  g.addEventListener('mousedown', e => {
+    if (currentTool === 'select' || currentTool === 'pan') {
+      e.stopPropagation();
+      dragging = true;
+      selectedAnnotation = ann.id;
+      refreshAnnotationsList();
+      rebuildSVGAnnotations();
+
+      const rect = canvasArea.getBoundingClientRect();
+      startSx = e.clientX - rect.left;
+      startSy = e.clientY - rect.top;
+      origImgX = ann.imgX;
+      origImgY = ann.imgY;
+
+      const onMove = e2 => {
+        if (!dragging) return;
+        const sx2 = e2.clientX - rect.left;
+        const sy2 = e2.clientY - rect.top;
+        ann.imgX = origImgX + (sx2 - startSx) / viewScale;
+        ann.imgY = origImgY + (sy2 - startSy) / viewScale;
+        rebuildSVGAnnotations();
+      };
+      const onUp = () => {
+        dragging = false;
+        window.removeEventListener('mousemove', onMove);
+        window.removeEventListener('mouseup', onUp);
+      };
+      window.addEventListener('mousemove', onMove);
+      window.addEventListener('mouseup', onUp);
+    }
+  });
+}
+
+// ── Selection ──
+function trySelectAt(sx, sy) {
+  let found = null;
+  annotations.forEach(ann => {
+    if (ann.type === 'text') {
+      const screen = imageToScreen(ann.imgX, ann.imgY);
+      const scaledSize = ann.fontSize * Math.min(Math.max(viewScale, 0.3), 3);
+      const tw = ann.text.length * scaledSize * 0.6;
+      if (sx >= screen.x - 4 && sx <= screen.x + tw + 4 &&
+          sy >= screen.y - scaledSize && sy <= screen.y + scaledSize * 0.3) {
+        found = ann.id;
+      }
+    }
+  });
+  selectedAnnotation = found;
+  refreshAnnotationsList();
+  rebuildSVGAnnotations();
+}
+
+// ── Annotations list ──
+function refreshAnnotationsList() {
+  const list = document.getElementById('annotations-list');
+  const clearWrap = document.getElementById('clear-all-wrap');
+  if (annotations.length === 0) {
+    list.innerHTML = '<div class="empty-state">No annotations yet. Use the text or spline tool to add annotations to the map.</div>';
+    clearWrap.hidden = true;
+    return;
+  }
+  clearWrap.hidden = false;
+  const textIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg>';
+  const splineIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 17c3.5-3.5 5-6 8-6s4.5 2.5 8 6" stroke-dasharray="4 3"/></svg>';
+  const deleteIcon = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>';
+
+  list.innerHTML = annotations.map(ann => {
+    const sel = ann.id === selectedAnnotation ? ' selected' : '';
+    const icon = ann.type === 'text' ? textIcon : splineIcon;
+    const name = ann.type === 'text' ? ann.text : `Spline (${ann.points.length} pts)`;
+    return `<div class="annotation-item${sel}" onclick="selectAnnotation(${ann.id})">
+      <div class="annotation-icon">${icon}</div>
+      <div class="annotation-name">${name}</div>
+      <button class="annotation-delete" onclick="event.stopPropagation();deleteAnnotation(${ann.id})">${deleteIcon}</button>
+    </div>`;
+  }).join('');
+}
+
+function selectAnnotation(id) {
+  selectedAnnotation = id;
+  const ann = annotations.find(a => a.id === id);
+  if (ann) {
+    if (ann.type === 'text') {
+      document.getElementById('text-size').value = ann.fontSize;
+      document.getElementById('text-size-val').textContent = ann.fontSize;
+      document.getElementById('text-color').value = ann.color;
+      document.getElementById('text-weight').value = ann.fontWeight;
+    } else if (ann.type === 'spline') {
+      document.getElementById('spline-width').value = ann.strokeWidth;
+      document.getElementById('spline-width-val').textContent = ann.strokeWidth;
+      document.getElementById('spline-color').value = ann.color;
+      document.getElementById('spline-dash').value = ann.dash;
+    }
+  }
+  refreshAnnotationsList();
+  rebuildSVGAnnotations();
+}
+
+function deleteAnnotation(id) {
+  annotations = annotations.filter(a => a.id !== id);
+  if (selectedAnnotation === id) selectedAnnotation = null;
+  rebuildSVGAnnotations();
+  refreshAnnotationsList();
+}
+
+function clearAllAnnotations() {
+  annotations = [];
+  selectedAnnotation = null;
+  rebuildSVGAnnotations();
+  refreshAnnotationsList();
+}
+
+// ── Update selected annotation props ──
+function updateSelectedTextProps() {
+  if (selectedAnnotation == null) return;
+  const ann = annotations.find(a => a.id === selectedAnnotation && a.type === 'text');
+  if (!ann) return;
+  ann.fontSize = parseInt(document.getElementById('text-size').value);
+  ann.color = document.getElementById('text-color').value;
+  ann.fontWeight = document.getElementById('text-weight').value;
+  rebuildSVGAnnotations();
+}
+
+function updateSelectedSplineProps() {
+  if (selectedAnnotation == null) return;
+  const ann = annotations.find(a => a.id === selectedAnnotation && a.type === 'spline');
+  if (!ann) return;
+  ann.strokeWidth = parseFloat(document.getElementById('spline-width').value);
+  ann.color = document.getElementById('spline-color').value;
+  ann.dash = document.getElementById('spline-dash').value;
+  rebuildSVGAnnotations();
+}
+
+// ── Export ──
+function exportImage() {
+  if (!terrainImage) return;
+  const exportCanvas = document.createElement('canvas');
+  exportCanvas.width = terrainWidth;
+  exportCanvas.height = terrainHeight;
+  const ectx = exportCanvas.getContext('2d');
+  ectx.drawImage(terrainImage, 0, 0);
+
+  annotations.forEach(ann => {
+    if (ann.type === 'text') {
+      ectx.font = `${ann.fontWeight} ${ann.fontSize}px Inter, sans-serif`;
+      ectx.fillStyle = ann.color;
+      ectx.shadowColor = 'rgba(0,0,0,0.7)';
+      ectx.shadowBlur = 4;
+      ectx.shadowOffsetY = 1;
+      ectx.fillText(ann.text, ann.imgX, ann.imgY);
+      ectx.shadowColor = 'transparent';
+    } else if (ann.type === 'spline' && ann.points.length >= 2) {
+      ectx.save();
+      ectx.strokeStyle = ann.color;
+      ectx.lineWidth = ann.strokeWidth;
+      ectx.lineCap = 'round';
+      ectx.lineJoin = 'round';
+      const dashParts = ann.dash.split(/[\s,]+/).map(Number).filter(n => !isNaN(n));
+      ectx.setLineDash(dashParts);
+      const pts = ann.points;
+      ectx.beginPath();
+      ectx.moveTo(pts[0].imgX, pts[0].imgY);
+      if (pts.length === 2) {
+        ectx.lineTo(pts[1].imgX, pts[1].imgY);
+      } else {
+        for (let i = 0; i < pts.length - 1; i++) {
+          const p0 = pts[Math.max(0, i - 1)];
+          const p1 = pts[i];
+          const p2 = pts[i + 1];
+          const p3 = pts[Math.min(pts.length - 1, i + 2)];
+          const t = 0.3;
+          ectx.bezierCurveTo(
+            p1.imgX + (p2.imgX - p0.imgX) * t,
+            p1.imgY + (p2.imgY - p0.imgY) * t,
+            p2.imgX - (p3.imgX - p1.imgX) * t,
+            p2.imgY - (p3.imgY - p1.imgY) * t,
+            p2.imgX, p2.imgY
+          );
+        }
+      }
+      ectx.stroke();
+      ectx.restore();
+    }
+  });
+
+  const link = document.createElement('a');
+  link.download = 'terrain_map_export.png';
+  link.href = exportCanvas.toDataURL('image/png');
+  link.click();
+}
+
+// ── Status ──
+function setStatus(state, text) {
+  document.getElementById('status-dot').classList.toggle('loading', state === 'loading');
+  document.getElementById('status-text').textContent = text;
+}
+
+// ── Init ──
+loadingOverlay.classList.add('hidden');
+drawCanvas();
+renderTerrain();
+</script>
+</body>
+</html>
