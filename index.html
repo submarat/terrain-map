@@ -728,9 +728,14 @@ function fetchTileImage(zoom, tx, ty) {
 }
 
 // ── Client-side terrain rendering ──
-async function renderTerrain() {
-  const lat = parseFloat(document.getElementById('inp-lat').value);
-  const lon = parseFloat(document.getElementById('inp-lon').value);
+let isRendering = false;
+
+async function renderTerrain(targetLat, targetLon) {
+  if (isRendering) return;
+  isRendering = true;
+
+  const lat = targetLat != null ? targetLat : parseFloat(document.getElementById('inp-lat').value);
+  const lon = targetLon != null ? targetLon : parseFloat(document.getElementById('inp-lon').value);
   const zoom = Math.max(5, Math.min(14, parseInt(document.getElementById('inp-zoom').value)));
   const tileCount = Math.max(2, Math.min(6, parseInt(document.getElementById('inp-tiles').value)));
 
@@ -869,13 +874,14 @@ async function renderTerrain() {
 
       annotationsFromGeo(annGeo);
 
-      resetView();
+      centerViewOnGeo(lat, lon);
       drawCanvas();
       rebuildSVGAnnotations();
       updateScaleBar();
       loadingOverlay.classList.add('hidden');
       setStatus('ready', `Terrain loaded (${totalPx}x${totalPx}) | ${eMin.toFixed(0)}m – ${eMax.toFixed(0)}m`);
       document.getElementById('btn-render').disabled = false;
+      isRendering = false;
     };
     img.src = offscreen.toDataURL();
 
@@ -883,6 +889,7 @@ async function renderTerrain() {
     loadingOverlay.classList.add('hidden');
     setStatus('ready', 'Error: ' + err.message);
     document.getElementById('btn-render').disabled = false;
+    isRendering = false;
   }
 }
 
@@ -943,6 +950,19 @@ function resetView() {
   viewScale = Math.min(cw / terrainWidth, ch / terrainHeight);
   viewX = (cw - terrainWidth * viewScale) / 2;
   viewY = (ch - terrainHeight * viewScale) / 2;
+}
+
+function centerViewOnGeo(lat, lon) {
+  if (!terrainImage || !terrainBounds) { resetView(); return; }
+  const cw = canvasArea.clientWidth;
+  const ch = canvasArea.clientHeight;
+  viewScale = Math.min(cw / terrainWidth, ch / terrainHeight);
+  const fracX = (lon - terrainBounds.west) / (terrainBounds.east - terrainBounds.west);
+  const fracY = (terrainBounds.north - lat) / (terrainBounds.north - terrainBounds.south);
+  const imgX = fracX * terrainWidth;
+  const imgY = fracY * terrainHeight;
+  viewX = cw / 2 - imgX * viewScale;
+  viewY = ch / 2 - imgY * viewScale;
 }
 
 function drawCanvas() {
@@ -1074,7 +1094,7 @@ function refreshViewport() {
   document.getElementById('inp-lat').value = centerGeo.lat.toFixed(4);
   document.getElementById('inp-lon').value = centerGeo.lon.toFixed(4);
 
-  renderTerrain();
+  renderTerrain(centerGeo.lat, centerGeo.lon);
 }
 
 // ── Coordinate conversion ──
