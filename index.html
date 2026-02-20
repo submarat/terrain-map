@@ -405,6 +405,72 @@
     font-size: 12px;
     line-height: 1.5;
   }
+
+  .map-overlay {
+    position: absolute;
+    z-index: 15;
+    pointer-events: none;
+    background: rgba(13, 17, 23, 0.7);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    border: 1px solid rgba(48, 54, 61, 0.6);
+    border-radius: 6px;
+    padding: 6px 10px;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: rgba(230, 237, 243, 0.9);
+    line-height: 1.4;
+  }
+
+  .coords-overlay {
+    bottom: 16px;
+    left: 16px;
+  }
+
+  .coords-overlay .coord-row {
+    display: flex;
+    gap: 6px;
+  }
+
+  .coords-overlay .coord-label {
+    color: rgba(139, 148, 158, 0.8);
+    min-width: 24px;
+  }
+
+  .scale-overlay {
+    bottom: 16px;
+    right: 16px;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 4px;
+  }
+
+  .scale-bar-track {
+    height: 4px;
+    background: rgba(230, 237, 243, 0.85);
+    border-radius: 2px;
+    position: relative;
+    min-width: 40px;
+  }
+
+  .scale-bar-track::before,
+  .scale-bar-track::after {
+    content: '';
+    position: absolute;
+    width: 1px;
+    height: 8px;
+    background: rgba(230, 237, 243, 0.85);
+    top: -2px;
+  }
+
+  .scale-bar-track::before { left: 0; }
+  .scale-bar-track::after { right: 0; }
+
+  .scale-label {
+    font-size: 10px;
+    color: rgba(230, 237, 243, 0.75);
+  }
 </style>
 </head>
 <body>
@@ -456,6 +522,14 @@
     </svg>
     <div class="text-input-overlay" id="text-input-overlay">
       <input type="text" id="text-input-field" placeholder="Type label..." />
+    </div>
+    <div class="map-overlay coords-overlay" id="coords-overlay">
+      <div class="coord-row"><span class="coord-label">Lat</span><span id="overlay-lat">—</span></div>
+      <div class="coord-row"><span class="coord-label">Lon</span><span id="overlay-lon">—</span></div>
+    </div>
+    <div class="map-overlay scale-overlay" id="scale-overlay">
+      <div class="scale-bar-track" id="scale-bar"></div>
+      <div class="scale-label" id="scale-label">—</div>
     </div>
     <div class="loading-overlay" id="loading-overlay">
       <div class="spinner"></div>
@@ -558,7 +632,6 @@
   <div class="status-dot" id="status-dot"></div>
   <span id="status-text">Ready</span>
   <span style="flex:1"></span>
-  <span id="cursor-coords"></span>
 </div>
 
 <script>
@@ -790,6 +863,7 @@ async function renderTerrain() {
 
       resetView();
       drawCanvas();
+      updateScaleBar();
       loadingOverlay.classList.add('hidden');
       setStatus('ready', `Terrain loaded (${totalPx}x${totalPx}) | ${eMin.toFixed(0)}m – ${eMax.toFixed(0)}m`);
       document.getElementById('btn-render').disabled = false;
@@ -876,7 +950,7 @@ function drawCanvas() {
   }
 }
 
-function resizeCanvas() { drawCanvas(); rebuildSVGAnnotations(); }
+function resizeCanvas() { drawCanvas(); rebuildSVGAnnotations(); updateScaleBar(); }
 window.addEventListener('resize', resizeCanvas);
 
 // ── Pan / Zoom ──
@@ -894,17 +968,12 @@ canvasArea.addEventListener('mousemove', e => {
     viewY = e.clientY - panStartY;
     drawCanvas();
     rebuildSVGAnnotations();
+    updateScaleBar();
   }
   const rect = canvasArea.getBoundingClientRect();
   const sx = e.clientX - rect.left;
   const sy = e.clientY - rect.top;
-  const coords = screenToGeo(sx, sy);
-  if (coords) {
-    const latDir = coords.lat >= 0 ? 'N' : 'S';
-    const lonDir = coords.lon >= 0 ? 'E' : 'W';
-    document.getElementById('cursor-coords').textContent =
-      `${Math.abs(coords.lat).toFixed(4)}${latDir}, ${Math.abs(coords.lon).toFixed(4)}${lonDir}`;
-  }
+  updateCoordsOverlay(sx, sy);
 });
 
 canvasArea.addEventListener('mouseup', () => { isPanning = false; });
@@ -922,6 +991,7 @@ canvasArea.addEventListener('wheel', e => {
   viewScale = newScale;
   drawCanvas();
   rebuildSVGAnnotations();
+  updateScaleBar();
 }, { passive: false });
 
 // ── Coordinate conversion ──
@@ -1365,6 +1435,84 @@ function exportImage() {
   link.download = 'terrain_map_export.png';
   link.href = exportCanvas.toDataURL('image/png');
   link.click();
+}
+
+// ── Coordinate overlay ──
+function updateCoordsOverlay(sx, sy) {
+  const coords = screenToGeo(sx, sy);
+  if (coords) {
+    const latDeg = Math.abs(coords.lat);
+    const latD = Math.floor(latDeg);
+    const latM = Math.floor((latDeg - latD) * 60);
+    const latS = ((latDeg - latD) * 60 - latM) * 60;
+    const latDir = coords.lat >= 0 ? 'N' : 'S';
+
+    const lonDeg = Math.abs(coords.lon);
+    const lonD = Math.floor(lonDeg);
+    const lonM = Math.floor((lonDeg - lonD) * 60);
+    const lonS = ((lonDeg - lonD) * 60 - lonM) * 60;
+    const lonDir = coords.lon >= 0 ? 'E' : 'W';
+
+    document.getElementById('overlay-lat').textContent =
+      `${latD}\u00B0 ${latM}\u2032 ${latS.toFixed(1)}\u2033 ${latDir}`;
+    document.getElementById('overlay-lon').textContent =
+      `${lonD}\u00B0 ${lonM}\u2032 ${lonS.toFixed(1)}\u2033 ${lonDir}`;
+  } else {
+    document.getElementById('overlay-lat').textContent = '—';
+    document.getElementById('overlay-lon').textContent = '—';
+  }
+}
+
+// ── Scale bar ──
+function haversineDistance(lat1, lon1, lat2, lon2) {
+  const R = 6371000;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = Math.sin(dLat / 2) ** 2
+          + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180)
+          * Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+const NICE_DISTANCES = [
+  1, 2, 5, 10, 20, 50, 100, 200, 500,
+  1000, 2000, 5000, 10000, 20000, 50000, 100000, 200000, 500000
+];
+
+function updateScaleBar() {
+  if (!terrainBounds || !terrainImage) return;
+
+  const cw = canvasArea.clientWidth;
+  const ch = canvasArea.clientHeight;
+  const midY = ch / 2;
+
+  const leftGeo = screenToGeo(0, midY);
+  const rightGeo = screenToGeo(cw, midY);
+  if (!leftGeo || !rightGeo) return;
+
+  const totalMeters = haversineDistance(leftGeo.lat, leftGeo.lon, rightGeo.lat, rightGeo.lon);
+  const metersPerPx = totalMeters / cw;
+
+  const targetPx = 120;
+  const targetMeters = metersPerPx * targetPx;
+
+  let bestDist = NICE_DISTANCES[0];
+  for (const d of NICE_DISTANCES) {
+    if (d <= targetMeters * 1.5) bestDist = d;
+  }
+
+  const barPx = bestDist / metersPerPx;
+
+  let label;
+  if (bestDist >= 1000) {
+    const km = bestDist / 1000;
+    label = `${km % 1 === 0 ? km.toFixed(0) : km.toFixed(1)} km`;
+  } else {
+    label = `${bestDist} m`;
+  }
+
+  document.getElementById('scale-bar').style.width = barPx + 'px';
+  document.getElementById('scale-label').textContent = label;
 }
 
 // ── Status ──
