@@ -656,6 +656,9 @@ let selectedAnnotation = null;
 let currentSplinePoints = [];
 let currentSplineEl = null;
 
+let refreshTimer = null;
+let lastRenderZoom = 11;
+
 // ── Terrain colormap ──
 const COLORMAP_STOPS = [
   [0.00, 26, 58, 26],
@@ -851,6 +854,9 @@ async function renderTerrain() {
     const imageData = new ImageData(rgba, totalPx, totalPx);
     octx.putImageData(imageData, 0, 0);
 
+    // Convert annotations to geo coords before swapping bounds
+    const annGeo = annotationsToGeo();
+
     const img = new Image();
     img.onload = () => {
       terrainImage = img;
@@ -861,8 +867,11 @@ async function renderTerrain() {
       const [southLat, eastLon] = tileToLatLon(xStart + tileCount, yStart + tileCount, zoom);
       terrainBounds = { north: northLat, south: southLat, west: westLon, east: eastLon };
 
+      annotationsFromGeo(annGeo);
+
       resetView();
       drawCanvas();
+      rebuildSVGAnnotations();
       updateScaleBar();
       loadingOverlay.classList.add('hidden');
       setStatus('ready', `Terrain loaded (${totalPx}x${totalPx}) | ${eMin.toFixed(0)}m – ${eMax.toFixed(0)}m`);
@@ -976,8 +985,12 @@ canvasArea.addEventListener('mousemove', e => {
   updateCoordsOverlay(sx, sy);
 });
 
-canvasArea.addEventListener('mouseup', () => { isPanning = false; });
-canvasArea.addEventListener('mouseleave', () => { isPanning = false; });
+canvasArea.addEventListener('mouseup', () => {
+  if (isPanning) { isPanning = false; scheduleViewportRefresh(); }
+});
+canvasArea.addEventListener('mouseleave', () => {
+  if (isPanning) { isPanning = false; scheduleViewportRefresh(); }
+});
 
 canvasArea.addEventListener('wheel', e => {
   e.preventDefault();
@@ -992,7 +1005,77 @@ canvasArea.addEventListener('wheel', e => {
   drawCanvas();
   rebuildSVGAnnotations();
   updateScaleBar();
+  scheduleViewportRefresh();
 }, { passive: false });
+
+// ── Annotation coordinate persistence across re-renders ──
+function imgToGeo(imgX, imgY) {
+  if (!terrainBounds) return null;
+  const fracX = imgX / terrainWidth;
+  const fracY = imgY / terrainHeight;
+  return {
+    lat: terrainBounds.north - fracY * (terrainBounds.north - terrainBounds.south),
+    lon: terrainBounds.west + fracX * (terrainBounds.east - terrainBounds.west)
+  };
+}
+
+function geoToImg(lat, lon) {
+  const fracX = (lon - terrainBounds.west) / (terrainBounds.east - terrainBounds.west);
+  const fracY = (terrainBounds.north - lat) / (terrainBounds.north - terrainBounds.south);
+  return { x: fracX * terrainWidth, y: fracY * terrainHeight };
+}
+
+function annotationsToGeo() {
+  if (!terrainBounds) return [];
+  return annotations.map(ann => {
+    if (ann.type === 'text') {
+      const geo = imgToGeo(ann.imgX, ann.imgY);
+      return { id: ann.id, type: 'text', geo, text: ann.text, fontSize: ann.fontSize, color: ann.color, fontWeight: ann.fontWeight };
+    } else {
+      const geoPoints = ann.points.map(p => imgToGeo(p.imgX, p.imgY));
+      return { id: ann.id, type: 'spline', geoPoints, strokeWidth: ann.strokeWidth, color: ann.color, dash: ann.dash };
+    }
+  });
+}
+
+function annotationsFromGeo(annGeo) {
+  if (!terrainBounds || !annGeo.length) return;
+  annotations = annGeo.map(ag => {
+    if (ag.type === 'text') {
+      const img = geoToImg(ag.geo.lat, ag.geo.lon);
+      return { id: ag.id, type: 'text', text: ag.text, imgX: img.x, imgY: img.y, fontSize: ag.fontSize, color: ag.color, fontWeight: ag.fontWeight };
+    } else {
+      const points = ag.geoPoints.map(g => {
+        const img = geoToImg(g.lat, g.lon);
+        return { imgX: img.x, imgY: img.y };
+      });
+      return { id: ag.id, type: 'spline', points, strokeWidth: ag.strokeWidth, color: ag.color, dash: ag.dash };
+    }
+  });
+}
+
+// ── Viewport refresh after pan/zoom ──
+function scheduleViewportRefresh() {
+  if (refreshTimer) clearTimeout(refreshTimer);
+  refreshTimer = setTimeout(() => {
+    refreshTimer = null;
+    refreshViewport();
+  }, 600);
+}
+
+function refreshViewport() {
+  if (!terrainBounds) return;
+
+  const cw = canvasArea.clientWidth;
+  const ch = canvasArea.clientHeight;
+  const centerGeo = screenToGeo(cw / 2, ch / 2);
+  if (!centerGeo) return;
+
+  document.getElementById('inp-lat').value = centerGeo.lat.toFixed(4);
+  document.getElementById('inp-lon').value = centerGeo.lon.toFixed(4);
+
+  renderTerrain();
+}
 
 // ── Coordinate conversion ──
 function screenToImage(sx, sy) {
