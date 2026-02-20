@@ -839,12 +839,22 @@ async function renderTerrain(targetLat, targetLon, silent) {
     if (silent) setProgress(70);
     await new Promise(r => requestAnimationFrame(r));
 
+    // Percentile-based contrast stretch for better relief visibility
     let eMin = Infinity, eMax = -Infinity;
-    for (let i = 0; i < elevation.length; i++) {
-      if (elevation[i] < eMin) eMin = elevation[i];
-      if (elevation[i] > eMax) eMax = elevation[i];
+    const sampleStep = 4;
+    const samples = [];
+    for (let y = 0; y < totalH; y += sampleStep) {
+      for (let x = 0; x < totalW; x += sampleStep) {
+        const v = elevation[y * totalW + x];
+        samples.push(v);
+        if (v < eMin) eMin = v;
+        if (v > eMax) eMax = v;
+      }
     }
-    const eRange = eMax - eMin || 1;
+    samples.sort((a, b) => a - b);
+    const pLow = samples[Math.floor(samples.length * 0.02)];
+    const pHigh = samples[Math.floor(samples.length * 0.98)];
+    const eRange = pHigh - pLow || 1;
 
     // Three soft lights for painterly oblique illumination
     const lights = [
@@ -916,7 +926,7 @@ async function renderTerrain(targetLat, targetLon, silent) {
         const ao = aoMap[idx] || 0.5;
 
         // Elevation color
-        let t = (elevation[idx] - eMin) / eRange;
+        let t = (elevation[idx] - pLow) / eRange;
         t = Math.pow(t, 0.8);
         let [cr, cg, cb] = sampleColormap(t);
 
