@@ -556,13 +556,13 @@
           <span id="zoom-val" style="font-size:12px;color:var(--text-dim);min-width:18px;text-align:right;">11</span>
         </div>
         <div class="field-row">
-          <span class="field-label">Tiles</span>
+          <span class="field-label">Density</span>
           <select id="inp-tiles">
-            <option value="2">2 x 2</option>
-            <option value="3">3 x 3</option>
-            <option value="4" selected>4 x 4</option>
-            <option value="5">5 x 5</option>
-            <option value="6">6 x 6</option>
+            <option value="2">Low</option>
+            <option value="3">Medium</option>
+            <option value="4" selected>High</option>
+            <option value="5">Very High</option>
+            <option value="6">Ultra</option>
           </select>
         </div>
         <button class="btn btn-primary btn-block" id="btn-render" onclick="renderTerrain()">Render Terrain</button>
@@ -737,7 +737,13 @@ async function renderTerrain(targetLat, targetLon) {
   const lat = targetLat != null ? targetLat : parseFloat(document.getElementById('inp-lat').value);
   const lon = targetLon != null ? targetLon : parseFloat(document.getElementById('inp-lon').value);
   const zoom = Math.max(5, Math.min(14, parseInt(document.getElementById('inp-zoom').value)));
-  const tileCount = Math.max(2, Math.min(6, parseInt(document.getElementById('inp-tiles').value)));
+  const baseTiles = Math.max(2, Math.min(6, parseInt(document.getElementById('inp-tiles').value)));
+
+  const cw = canvasArea.clientWidth;
+  const ch = canvasArea.clientHeight;
+  const aspect = cw / ch;
+  const tilesY = baseTiles;
+  const tilesX = Math.max(baseTiles, Math.ceil(baseTiles * aspect));
 
   loadingOverlay.classList.remove('hidden');
   setStatus('loading', 'Fetching tiles...');
@@ -745,16 +751,18 @@ async function renderTerrain(targetLat, targetLon) {
 
   try {
     const [cx, cy] = latLonToTile(lat, lon, zoom);
-    const half = Math.floor(tileCount / 2);
-    const xStart = cx - half;
-    const yStart = cy - half;
+    const halfX = Math.floor(tilesX / 2);
+    const halfY = Math.floor(tilesY / 2);
+    const xStart = cx - halfX;
+    const yStart = cy - halfY;
 
-    const totalPx = tileCount * 256;
-    const elevation = new Float32Array(totalPx * totalPx);
+    const totalW = tilesX * 256;
+    const totalH = tilesY * 256;
+    const elevation = new Float32Array(totalW * totalH);
 
     const promises = [];
-    for (let dy = 0; dy < tileCount; dy++) {
-      for (let dx = 0; dx < tileCount; dx++) {
+    for (let dy = 0; dy < tilesY; dy++) {
+      for (let dx = 0; dx < tilesX; dx++) {
         const tx = xStart + dx;
         const ty = yStart + dy;
         promises.push(
@@ -763,7 +771,7 @@ async function renderTerrain(targetLat, targetLon) {
       }
     }
 
-    document.getElementById('loading-text').textContent = `Fetching ${tileCount * tileCount} tiles...`;
+    document.getElementById('loading-text').textContent = `Fetching ${tilesX * tilesY} tiles...`;
     const tiles = await Promise.all(promises);
 
     document.getElementById('loading-text').textContent = 'Decoding elevation...';
@@ -778,7 +786,7 @@ async function renderTerrain(targetLat, targetLon) {
           const h = (r * 256 + g + b / 256) - 32768;
           const gy = dy * 256 + py;
           const gx = dx * 256 + px;
-          elevation[gy * totalPx + gx] = h;
+          elevation[gy * totalW + gx] = h;
         }
       }
     }
@@ -798,13 +806,13 @@ async function renderTerrain(targetLat, targetLon) {
     const sinAlt = Math.sin(altRad);
     const cosAlt = Math.cos(altRad);
 
-    const rgba = new Uint8ClampedArray(totalPx * totalPx * 4);
+    const rgba = new Uint8ClampedArray(totalW * totalH * 4);
 
-    for (let y = 1; y < totalPx - 1; y++) {
-      for (let x = 1; x < totalPx - 1; x++) {
-        const idx = y * totalPx + x;
+    for (let y = 1; y < totalH - 1; y++) {
+      for (let x = 1; x < totalW - 1; x++) {
+        const idx = y * totalW + x;
         const dzdx = (elevation[idx + 1] - elevation[idx - 1]) * 0.5;
-        const dzdy = (elevation[idx + totalPx] - elevation[idx - totalPx]) * 0.5;
+        const dzdy = (elevation[idx + totalW] - elevation[idx - totalW]) * 0.5;
 
         const slope = Math.sqrt(dzdx * dzdx + dzdy * dzdy);
         const aspect = Math.atan2(-dzdy, dzdx);
@@ -827,22 +835,21 @@ async function renderTerrain(targetLat, targetLon) {
       }
     }
 
-    // Fill edges by copying nearest interior row/col
-    for (let x = 0; x < totalPx; x++) {
-      const topSrc = (1 * totalPx + x) * 4;
-      const topDst = (0 * totalPx + x) * 4;
-      const botSrc = ((totalPx - 2) * totalPx + x) * 4;
-      const botDst = ((totalPx - 1) * totalPx + x) * 4;
+    for (let x = 0; x < totalW; x++) {
+      const topSrc = (1 * totalW + x) * 4;
+      const topDst = (0 * totalW + x) * 4;
+      const botSrc = ((totalH - 2) * totalW + x) * 4;
+      const botDst = ((totalH - 1) * totalW + x) * 4;
       for (let c = 0; c < 4; c++) {
         rgba[topDst + c] = rgba[topSrc + c];
         rgba[botDst + c] = rgba[botSrc + c];
       }
     }
-    for (let y = 0; y < totalPx; y++) {
-      const leftSrc = (y * totalPx + 1) * 4;
-      const leftDst = (y * totalPx + 0) * 4;
-      const rightSrc = (y * totalPx + totalPx - 2) * 4;
-      const rightDst = (y * totalPx + totalPx - 1) * 4;
+    for (let y = 0; y < totalH; y++) {
+      const leftSrc = (y * totalW + 1) * 4;
+      const leftDst = (y * totalW + 0) * 4;
+      const rightSrc = (y * totalW + totalW - 2) * 4;
+      const rightDst = (y * totalW + totalW - 1) * 4;
       for (let c = 0; c < 4; c++) {
         rgba[leftDst + c] = rgba[leftSrc + c];
         rgba[rightDst + c] = rgba[rightSrc + c];
@@ -853,23 +860,22 @@ async function renderTerrain(targetLat, targetLon) {
     await new Promise(r => requestAnimationFrame(r));
 
     const offscreen = document.createElement('canvas');
-    offscreen.width = totalPx;
-    offscreen.height = totalPx;
+    offscreen.width = totalW;
+    offscreen.height = totalH;
     const octx = offscreen.getContext('2d');
-    const imageData = new ImageData(rgba, totalPx, totalPx);
+    const imageData = new ImageData(rgba, totalW, totalH);
     octx.putImageData(imageData, 0, 0);
 
-    // Convert annotations to geo coords before swapping bounds
     const annGeo = annotationsToGeo();
 
     const img = new Image();
     img.onload = () => {
       terrainImage = img;
-      terrainWidth = totalPx;
-      terrainHeight = totalPx;
+      terrainWidth = totalW;
+      terrainHeight = totalH;
 
       const [northLat, westLon] = tileToLatLon(xStart, yStart, zoom);
-      const [southLat, eastLon] = tileToLatLon(xStart + tileCount, yStart + tileCount, zoom);
+      const [southLat, eastLon] = tileToLatLon(xStart + tilesX, yStart + tilesY, zoom);
       terrainBounds = { north: northLat, south: southLat, west: westLon, east: eastLon };
 
       annotationsFromGeo(annGeo);
@@ -879,7 +885,7 @@ async function renderTerrain(targetLat, targetLon) {
       rebuildSVGAnnotations();
       updateScaleBar();
       loadingOverlay.classList.add('hidden');
-      setStatus('ready', `Terrain loaded (${totalPx}x${totalPx}) | ${eMin.toFixed(0)}m – ${eMax.toFixed(0)}m`);
+      setStatus('ready', `Terrain loaded (${totalW}x${totalH}) | ${eMin.toFixed(0)}m – ${eMax.toFixed(0)}m`);
       document.getElementById('btn-render').disabled = false;
       isRendering = false;
     };
