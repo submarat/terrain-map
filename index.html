@@ -659,35 +659,30 @@ let currentSplineEl = null;
 let refreshTimer = null;
 let lastRenderZoom = 11;
 
-// ── National Geographic hypsometric colormap ──
+// ── Papery hypsometric colormap ──
 const COLORMAP_STOPS = [
-  [0.000,  62, 97, 60],
-  [0.030,  80, 117, 68],
-  [0.060,  95, 132, 74],
-  [0.100, 115, 150, 80],
-  [0.140, 138, 164, 86],
-  [0.180, 158, 178, 98],
-  [0.220, 176, 190, 110],
-  [0.260, 192, 198, 120],
-  [0.300, 205, 200, 125],
-  [0.340, 212, 196, 118],
-  [0.380, 215, 188, 108],
-  [0.420, 210, 176, 98],
-  [0.460, 200, 162, 90],
-  [0.500, 192, 150, 85],
-  [0.540, 185, 140, 82],
-  [0.580, 178, 132, 80],
-  [0.620, 168, 122, 78],
-  [0.660, 156, 112, 76],
-  [0.700, 148, 106, 78],
-  [0.740, 152, 118, 96],
-  [0.780, 162, 134, 114],
-  [0.820, 172, 150, 132],
-  [0.860, 186, 168, 152],
-  [0.900, 202, 190, 176],
-  [0.940, 220, 212, 200],
-  [0.970, 236, 230, 222],
-  [1.000, 248, 244, 240],
+  [0.000, 148, 166, 130],
+  [0.050, 160, 172, 134],
+  [0.100, 172, 178, 140],
+  [0.150, 184, 182, 146],
+  [0.200, 194, 186, 150],
+  [0.250, 202, 190, 154],
+  [0.300, 208, 192, 156],
+  [0.350, 212, 194, 158],
+  [0.400, 210, 190, 156],
+  [0.450, 206, 184, 152],
+  [0.500, 200, 176, 148],
+  [0.550, 194, 168, 144],
+  [0.600, 186, 160, 140],
+  [0.650, 178, 152, 136],
+  [0.700, 170, 148, 134],
+  [0.750, 166, 148, 136],
+  [0.800, 170, 156, 144],
+  [0.850, 180, 168, 158],
+  [0.900, 196, 186, 176],
+  [0.940, 212, 204, 196],
+  [0.970, 228, 222, 216],
+  [1.000, 242, 238, 234],
 ];
 
 function sampleColormap(t) {
@@ -815,15 +810,20 @@ async function renderTerrain(targetLat, targetLon) {
     }
     const eRange = eMax - eMin || 1;
 
-    // Primary light: NW at 315°, 45° altitude (warm, strong)
-    const az1 = 315 * Math.PI / 180, alt1 = 45 * Math.PI / 180;
-    const sinAlt1 = Math.sin(alt1), cosAlt1 = Math.cos(alt1);
-    // Secondary fill light: E at 90°, 30° altitude (cool, soft)
-    const az2 = 90 * Math.PI / 180, alt2 = 30 * Math.PI / 180;
-    const sinAlt2 = Math.sin(alt2), cosAlt2 = Math.cos(alt2);
+    // Three soft lights for painterly oblique illumination
+    const lights = [
+      { az: 315, alt: 50, weight: 0.50 },  // NW primary
+      { az:  75, alt: 35, weight: 0.25 },  // ENE fill
+      { az: 200, alt: 40, weight: 0.25 },  // SSW back-fill
+    ].map(l => ({
+      sinAlt: Math.sin(l.alt * Math.PI / 180),
+      cosAlt: Math.cos(l.alt * Math.PI / 180),
+      azRad: l.az * Math.PI / 180,
+      weight: l.weight,
+    }));
 
-    // Precompute ambient occlusion via local elevation deviation
-    const aoRadius = 3;
+    // Gentle ambient occlusion
+    const aoRadius = 4;
     const aoMap = new Float32Array(totalW * totalH);
     for (let y = aoRadius; y < totalH - aoRadius; y++) {
       for (let x = aoRadius; x < totalW - aoRadius; x++) {
@@ -837,21 +837,20 @@ async function renderTerrain(targetLat, targetLon) {
             count++;
           }
         }
-        const avg = sum / count;
-        aoMap[idx] = Math.max(0, Math.min(1, 0.5 + (center - avg) * 0.015));
+        aoMap[idx] = Math.max(0, Math.min(1, 0.5 + (center - sum / count) * 0.008));
       }
     }
 
     const rgba = new Uint8ClampedArray(totalW * totalH * 4);
 
-    // Exponent to shape the elevation curve: lifts lowland detail
-    const gamma = 0.85;
+    // Paper base tint for blending
+    const paperR = 245, paperG = 240, paperB = 232;
 
     for (let y = 1; y < totalH - 1; y++) {
       for (let x = 1; x < totalW - 1; x++) {
         const idx = y * totalW + x;
 
-        // Sobel-like gradient for smoother normals
+        // Sobel gradient for smooth normals
         const e = elevation;
         const w = totalW;
         const dzdx = (
@@ -870,41 +869,49 @@ async function renderTerrain(targetLat, targetLon) {
         const cosSlope = Math.cos(slopeAngle);
         const sinSlope = Math.sin(slopeAngle);
 
-        // Primary hillshade (weight 0.7)
-        let hs1 = sinAlt1 * cosSlope + cosAlt1 * sinSlope * Math.cos(az1 - aspect);
-        hs1 = Math.max(0, hs1);
-
-        // Secondary fill light (weight 0.3)
-        let hs2 = sinAlt2 * cosSlope + cosAlt2 * sinSlope * Math.cos(az2 - aspect);
-        hs2 = Math.max(0, hs2);
-
-        let shade = 0.7 * hs1 + 0.3 * hs2;
-
-        // Ambient occlusion darkens valleys
-        const ao = aoMap[idx] || 0.5;
-        const aoFactor = 0.6 + 0.4 * ao;
-
-        // Elevation-normalized color
-        let t = (elevation[idx] - eMin) / eRange;
-        t = Math.pow(t, gamma);
-        const [cr, cg, cb] = sampleColormap(t);
-
-        // Luminosity blending: shadows darken, highlights brighten subtly
-        const shadowStrength = 0.25;
-        const highlightStrength = 0.12;
-        let light;
-        if (shade <= 0.5) {
-          light = shadowStrength + (1.0 - shadowStrength) * (shade * 2);
-        } else {
-          light = 1.0 + highlightStrength * ((shade - 0.5) * 2);
+        // Multi-light hillshade
+        let shade = 0;
+        for (const L of lights) {
+          let hs = L.sinAlt * cosSlope + L.cosAlt * sinSlope * Math.cos(L.azRad - aspect);
+          shade += L.weight * Math.max(0, hs);
         }
 
-        light *= aoFactor;
+        // Soft AO
+        const ao = aoMap[idx] || 0.5;
+
+        // Elevation color
+        let t = (elevation[idx] - eMin) / eRange;
+        t = Math.pow(t, 0.8);
+        let [cr, cg, cb] = sampleColormap(t);
+
+        // Mix with paper tint (30% paper bleed for that printed feel)
+        const paperMix = 0.30;
+        cr = cr * (1 - paperMix) + paperR * paperMix;
+        cg = cg * (1 - paperMix) + paperG * paperMix;
+        cb = cb * (1 - paperMix) + paperB * paperMix;
+
+        // Soft shading: high ambient floor, gentle shadow/highlight
+        const ambient = 0.55;
+        let light = ambient + (1.0 - ambient) * shade;
+
+        // Very gentle AO influence
+        light *= (0.82 + 0.18 * ao);
+
+        // Subtle warm tint in shadows, cool in highlights
+        let rMul = light, gMul = light, bMul = light;
+        if (shade < 0.4) {
+          const shadowDepth = (0.4 - shade) / 0.4;
+          rMul += shadowDepth * 0.03;
+          bMul -= shadowDepth * 0.02;
+        } else if (shade > 0.6) {
+          const highAmount = (shade - 0.6) / 0.4;
+          bMul += highAmount * 0.015;
+        }
 
         const oi = idx * 4;
-        rgba[oi]     = Math.min(255, Math.round(cr * light));
-        rgba[oi + 1] = Math.min(255, Math.round(cg * light));
-        rgba[oi + 2] = Math.min(255, Math.round(cb * light));
+        rgba[oi]     = Math.min(255, Math.round(cr * rMul));
+        rgba[oi + 1] = Math.min(255, Math.round(cg * gMul));
+        rgba[oi + 2] = Math.min(255, Math.round(cb * bMul));
         rgba[oi + 3] = 255;
       }
     }
