@@ -880,7 +880,7 @@ async function renderTerrain(targetLat, targetLon) {
 
       annotationsFromGeo(annGeo);
 
-      centerViewOnGeo(lat, lon);
+      resetView();
       drawCanvas();
       rebuildSVGAnnotations();
       updateScaleBar();
@@ -958,18 +958,6 @@ function resetView() {
   viewY = (ch - terrainHeight * viewScale) / 2;
 }
 
-function centerViewOnGeo(lat, lon) {
-  if (!terrainImage || !terrainBounds) { resetView(); return; }
-  const cw = canvasArea.clientWidth;
-  const ch = canvasArea.clientHeight;
-  viewScale = Math.max(cw / terrainWidth, ch / terrainHeight);
-  const fracX = (lon - terrainBounds.west) / (terrainBounds.east - terrainBounds.west);
-  const fracY = (terrainBounds.north - lat) / (terrainBounds.north - terrainBounds.south);
-  const imgX = fracX * terrainWidth;
-  const imgY = fracY * terrainHeight;
-  viewX = cw / 2 - imgX * viewScale;
-  viewY = ch / 2 - imgY * viewScale;
-}
 
 function drawCanvas() {
   const cw = canvasArea.clientWidth;
@@ -1031,7 +1019,6 @@ canvasArea.addEventListener('wheel', e => {
   drawCanvas();
   rebuildSVGAnnotations();
   updateScaleBar();
-  scheduleViewportRefresh();
 }, { passive: false });
 
 // ── Annotation coordinate persistence across re-renders ──
