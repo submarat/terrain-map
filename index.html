@@ -376,6 +376,22 @@
 
   .loading-text { font-size: 13px; color: var(--text-dim); }
 
+  .progress-bar {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    height: 3px;
+    background: var(--accent);
+    z-index: 55;
+    transition: width 0.15s ease-out, opacity 0.4s;
+    opacity: 0;
+    pointer-events: none;
+    border-radius: 0 2px 2px 0;
+    box-shadow: 0 0 8px rgba(88, 166, 255, 0.4);
+  }
+
+  .progress-bar.active { opacity: 1; }
+
   .text-input-overlay {
     position: absolute;
     z-index: 30;
@@ -531,6 +547,7 @@
       <div class="scale-bar-track" id="scale-bar"></div>
       <div class="scale-label" id="scale-label">—</div>
     </div>
+    <div class="progress-bar" id="progress-bar"></div>
     <div class="loading-overlay" id="loading-overlay">
       <div class="spinner"></div>
       <div class="loading-text" id="loading-text">Rendering terrain...</div>
@@ -739,7 +756,13 @@ function fetchTileImage(zoom, tx, ty) {
 // ── Client-side terrain rendering ──
 let isRendering = false;
 
-async function renderTerrain(targetLat, targetLon) {
+const progressBar = document.getElementById('progress-bar');
+
+function setProgress(pct) {
+  progressBar.style.width = pct + '%';
+}
+
+async function renderTerrain(targetLat, targetLon, silent) {
   if (isRendering) return;
   isRendering = true;
 
@@ -754,7 +777,12 @@ async function renderTerrain(targetLat, targetLon) {
   const tilesY = baseTiles;
   const tilesX = Math.max(baseTiles, Math.ceil(baseTiles * aspect));
 
-  loadingOverlay.classList.remove('hidden');
+  if (silent) {
+    setProgress(0);
+    progressBar.classList.add('active');
+  } else {
+    loadingOverlay.classList.remove('hidden');
+  }
   setStatus('loading', 'Fetching tiles...');
   document.getElementById('btn-render').disabled = true;
 
@@ -769,21 +797,28 @@ async function renderTerrain(targetLat, targetLon) {
     const totalH = tilesY * 256;
     const elevation = new Float32Array(totalW * totalH);
 
+    const totalTiles = tilesX * tilesY;
+    let fetched = 0;
     const promises = [];
     for (let dy = 0; dy < tilesY; dy++) {
       for (let dx = 0; dx < tilesX; dx++) {
         const tx = xStart + dx;
         const ty = yStart + dy;
         promises.push(
-          fetchTileImage(zoom, tx, ty).then(imgData => ({ dx, dy, imgData }))
+          fetchTileImage(zoom, tx, ty).then(imgData => {
+            fetched++;
+            if (silent) setProgress((fetched / totalTiles) * 60);
+            return { dx, dy, imgData };
+          })
         );
       }
     }
 
-    document.getElementById('loading-text').textContent = `Fetching ${tilesX * tilesY} tiles...`;
+    if (!silent) document.getElementById('loading-text').textContent = `Fetching ${totalTiles} tiles...`;
     const tiles = await Promise.all(promises);
 
-    document.getElementById('loading-text').textContent = 'Decoding elevation...';
+    if (!silent) document.getElementById('loading-text').textContent = 'Decoding elevation...';
+    if (silent) setProgress(65);
     await new Promise(r => requestAnimationFrame(r));
 
     for (const { dx, dy, imgData } of tiles) {
@@ -800,7 +835,8 @@ async function renderTerrain(targetLat, targetLon) {
       }
     }
 
-    document.getElementById('loading-text').textContent = 'Computing hillshade...';
+    if (!silent) document.getElementById('loading-text').textContent = 'Computing hillshade...';
+    if (silent) setProgress(70);
     await new Promise(r => requestAnimationFrame(r));
 
     let eMin = Infinity, eMax = -Infinity;
@@ -937,7 +973,8 @@ async function renderTerrain(targetLat, targetLon) {
       }
     }
 
-    document.getElementById('loading-text').textContent = 'Rendering image...';
+    if (!silent) document.getElementById('loading-text').textContent = 'Rendering image...';
+    if (silent) setProgress(90);
     await new Promise(r => requestAnimationFrame(r));
 
     const offscreen = document.createElement('canvas');
@@ -965,7 +1002,12 @@ async function renderTerrain(targetLat, targetLon) {
       drawCanvas();
       rebuildSVGAnnotations();
       updateScaleBar();
-      loadingOverlay.classList.add('hidden');
+      if (silent) {
+        setProgress(100);
+        setTimeout(() => { progressBar.classList.remove('active'); }, 300);
+      } else {
+        loadingOverlay.classList.add('hidden');
+      }
       setStatus('ready', `Terrain loaded (${totalW}x${totalH}) | ${eMin.toFixed(0)}m – ${eMax.toFixed(0)}m`);
       document.getElementById('btn-render').disabled = false;
       isRendering = false;
@@ -973,7 +1015,11 @@ async function renderTerrain(targetLat, targetLon) {
     img.src = offscreen.toDataURL();
 
   } catch (err) {
-    loadingOverlay.classList.add('hidden');
+    if (silent) {
+      progressBar.classList.remove('active');
+    } else {
+      loadingOverlay.classList.add('hidden');
+    }
     setStatus('ready', 'Error: ' + err.message);
     document.getElementById('btn-render').disabled = false;
     isRendering = false;
@@ -1168,7 +1214,7 @@ function refreshViewport() {
   document.getElementById('inp-lat').value = centerGeo.lat.toFixed(4);
   document.getElementById('inp-lon').value = centerGeo.lon.toFixed(4);
 
-  renderTerrain(centerGeo.lat, centerGeo.lon);
+  renderTerrain(centerGeo.lat, centerGeo.lon, true);
 }
 
 // ── Coordinate conversion ──
